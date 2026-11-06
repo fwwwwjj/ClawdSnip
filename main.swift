@@ -33,12 +33,12 @@ func buildMenu() -> [MenuItem] {
 let claudeBundleID = "com.anthropic.claudefordesktop"
 let idleAlpha: CGFloat = 0.85
 
-let clawdUnit: CGFloat = 1.5   // 一个像素格 1.5pt（Retina 上正好 3 个物理像素）
-let walkSlack: CGFloat = 15    // 散步范围：左右总共 15pt（10 格），够看出在动，又不夸张
+let clawdUnit: CGFloat = 2     // 一个像素格 2pt（Retina 上正好 4 个物理像素），和 Claude 桌面版里的 Clawd 差不多大
+let walkSlack: CGFloat = 10 * clawdUnit  // 散步范围：左右总共 10 格，够看出在动，又不夸张
 let tickHz: Double = 8         // 动起来时的帧率；不动时不醒、不重绘
-let headroom: CGFloat = 1.5    // 头顶只留小跳一下的空间
+let headroom: CGFloat = clawdUnit  // 头顶只留小跳一下（1 格）的空间
 let stagePad: CGFloat = 2
-let artSize = NSSize(width: 18 * clawdUnit, height: 10 * clawdUnit)  // 27 × 15
+let artSize = NSSize(width: 18 * clawdUnit, height: 10 * clawdUnit)  // 36 × 20
 let stageSize = NSSize(width: artSize.width + walkSlack + stagePad * 2,
                        height: artSize.height + headroom + stagePad * 2)
 
@@ -700,6 +700,7 @@ final class Controller: NSObject, NSApplicationDelegate {
     private var hoverGen = 0, collapseGen = 0, menuGen = 0, toastGen = 0
     private var busy = false
     private var askedAccessibility = false
+    private var askedScreenRecording = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let me = NSRunningApplication.current
@@ -732,7 +733,7 @@ final class Controller: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
-        if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
+        // 录屏权限不在启动时要，等第一次截图时再要
         toast("Clawd 就位 · 悬停展开")
     }
 
@@ -977,8 +978,22 @@ final class Controller: NSObject, NSApplicationDelegate {
 
     // MARK: 截图
 
+    /// 没有录屏权限时：第一次让系统弹窗询问，之后直接打开对应的系统设置页面
+    private func ensureScreenRecording() -> Bool {
+        if CGPreflightScreenCaptureAccess() { return true }
+        if !askedScreenRecording {
+            askedScreenRecording = true
+            _ = CGRequestScreenCaptureAccess()
+        } else if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+        toast("需要录屏权限 · 打开后重开 ClawdSnip", seconds: 3.5)
+        return false
+    }
+
     func capture(_ mode: CaptureMode) {
         guard !busy else { return }
+        guard ensureScreenRecording() else { return }
         collapse(animated: false)
         if hovered { setHovered(false) }
         busy = true

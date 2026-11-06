@@ -22,7 +22,16 @@ done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 
 xattr -cr "$APP"
-codesign --force --sign - "$APP"
+# 有固定签名（setup-signing.sh 生成）就用它，重新编译后系统授权不失效；没有就退回临时签名
+SIGN_DIR="$HOME/Library/Application Support/ClawdSnip"
+KC="$SIGN_DIR/signing.keychain-db"
+if [[ -f "$KC" ]]; then
+  security unlock-keychain -p "$(cat "$SIGN_DIR/signing.pass")" "$KC"
+  codesign --force --keychain "$KC" --sign "ClawdSnip Local Signing" "$APP"
+else
+  echo "warning: 没有固定签名，用临时签名（重新编译后需要重新授权）。先运行 ./setup-signing.sh"
+  codesign --force --sign - "$APP"
+fi
 codesign --verify "$APP"
 
 DEST="$HOME/Applications/ClawdSnip.app"
